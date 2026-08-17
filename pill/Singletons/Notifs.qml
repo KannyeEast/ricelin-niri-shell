@@ -111,15 +111,23 @@ Singleton {
     }
 
     /**
-     * Focus the app's Hyprland window (workspace switch included) by matching the
-     * notification's desktopEntry/appName against the live window classes.
+     * Focus the app's window (workspace switch included) by matching the
+     * notification's desktopEntry/appName against the live window app ids.
+     *
+     * Hyprland exposed both `class` and `initialClass`, and this matched either,
+     * because a window that retitles itself could drift off its launch class.
+     * niri reports a single `app_id`, so there is one field to test.
+     *
+     * Windows with no app id are skipped rather than matched as the empty
+     * string, which `contains` would otherwise treat as a match for anything.
      */
     function raiseWindow(n) {
         if (!n) return;
         var token = String(n.desktopEntry && n.desktopEntry.length ? n.desktopEntry : (n.appName || "")).toLowerCase();
         if (token.length === 0) return;
         Quickshell.execDetached(["sh", "-c",
-            "addr=$(hyprctl clients -j | jq -r --arg q \"$1\" 'first(.[] | select(((.class | if . then ascii_downcase else \"\" end) | contains($q)) or ((.initialClass | if . then ascii_downcase else \"\" end) | contains($q))) | .address)'); [ -n \"$addr\" ] && hyprctl dispatch \"hl.dsp.focus({ window = \\\"address:$addr\\\" })\"",
+            "id=$(niri msg --json windows | jq -r --arg q \"$1\" 'first(.[] | select(.app_id != null and (.app_id | ascii_downcase | contains($q))) | .id) // empty'); " +
+            "[ -n \"$id\" ] && exec niri msg action focus-window --id \"$id\"",
             "sh", token]);
     }
 

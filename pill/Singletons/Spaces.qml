@@ -21,8 +21,8 @@ import "../lib/binds.js" as Binds
 Singleton {
     id: root
 
-    readonly property string path: Quickshell.env("HOME") + "/.config/hypr/modules/spaces.lua"
-    readonly property string bindsPath: Quickshell.env("HOME") + "/.config/hypr/modules/binds.lua"
+    readonly property string path: Paths.hyprlandConfig("modules/spaces.lua")
+    readonly property string bindsPath: Paths.hyprlandConfig("modules/binds.lua")
 
     property var list: []
     property string editing: ""

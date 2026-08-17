@@ -2,12 +2,15 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Quickshell
-import Quickshell.Hyprland
 import "Singletons"
 
 /**
- * Row of icon buttons for windows parked on Hyprland's `special:minimized`
- * workspace (Super+M). Clicking one moves it back to the focused workspace.
+ * Row of icon buttons for windows parked in the minimize stash (Super+M).
+ * Clicking one moves it back to the workspace this pill's monitor is showing.
+ *
+ * The stash is a niri workspace named "minimized"; see [[Niri]] for why, and for
+ * the one config line it needs. Without that line the list is empty and the row
+ * collapses, which is the same as having nothing minimized.
  */
 Row {
     id: root
@@ -16,39 +19,16 @@ Row {
     property string screenName: ""
     spacing: 8 * s
 
-    /**
-     * Resolve the workspace id to restore into: the active workspace of the
-     * monitor this pill lives on, so a window reappears on the screen the user
-     * clicked, falling back to the focused workspace.
-     */
-    function restoreWorkspace() {
-        var ms = Hyprland.monitors.values;
-        for (var i = 0; i < ms.length; i++)
-            if (ms[i].name === root.screenName && ms[i].activeWorkspace)
-                return ms[i].activeWorkspace.id;
-        return Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 1;
-    }
-
-    readonly property var items: {
-        var out = [];
-        var tl = Hyprland.toplevels.values;
-        for (var i = 0; i < tl.length; i++) {
-            var t = tl[i];
-            if (t && t.workspace && t.workspace.name === "special:minimized")
-                out.push(t);
-        }
-        return out;
-    }
+    readonly property var items: Niri.minimizedWindows
     readonly property int count: items.length
 
     /**
-     * Resolve an icon path for a toplevel by matching its window class to a
-     * desktop entry id (the class often differs from the icon-theme name), with
-     * a direct icon-theme lookup as fallback.
+     * Resolve an icon path for a window by matching its app id to a desktop
+     * entry id (the two often differ from the icon-theme name), with a direct
+     * icon-theme lookup as fallback.
      */
     function iconFor(t) {
-        var cls = (t && t.lastIpcObject && t.lastIpcObject.class) ? t.lastIpcObject.class
-            : (t && t.wayland && t.wayland.appId ? t.wayland.appId : "");
+        var cls = t && t.app_id ? t.app_id : "";
         if (!cls)
             return "";
         var apps = DesktopEntries.applications.values;
@@ -89,18 +69,22 @@ Row {
                 anchors.margins: -3 * root.s
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
+                /**
+                 * Restore onto the monitor this pill lives on, so the window
+                 * comes back where it was clicked rather than wherever focus
+                 * happens to be.
+                 */
                 onClicked: {
-                    var addr = chip.modelData.address;
-                    if (addr.indexOf("0x") !== 0)
-                        addr = "0x" + addr;
-                    Hyprland.dispatch('hl.dsp.window.move({ workspace = ' + root.restoreWorkspace() + ', window = "address:' + addr + '" })');
+                    var ws = Niri.restoreTargetOn(root.screenName);
+                    if (ws)
+                        Niri.restore(chip.modelData.id, ws.output, ws.idx);
                 }
             }
 
             Tooltip {
                 s: root.s
                 placement: "below"
-                title: chip.modelData.title
+                title: chip.modelData.title || ""
                 show: area.containsMouse
             }
         }

@@ -47,7 +47,7 @@ Singleton {
     readonly property string home: Quickshell.env("HOME")
     readonly property string defaultDir: home + "/Videos/Recordings"
     readonly property string thumbDir: (Quickshell.env("XDG_CACHE_HOME") || (home + "/.cache")) + "/ricelin/rec-thumbs/"
-    readonly property string thumbScript: home + "/.config/hypr/scripts/rec-thumbs.sh"
+    readonly property string thumbScript: Paths.script("rec-thumbs.sh")
     readonly property string outDir: {
         var d = Flags.recordDir;
         return d && d.length > 0 ? d : defaultDir;
@@ -330,15 +330,26 @@ Singleton {
     }
 
     /**
-     * Combined Window / Region picker: feeds each Hyprland client's current
-     * rectangle to `slurp`, so clicking a window snaps to its `WxH+X+Y` geometry
-     * while dragging draws a freeform region. The rectangle is captured
-     * statically, so a window moved or resized after the pick is not followed.
-     * Empty pick or non-zero exit (Escape) aborts.
+     * Region picker: drag to draw a freeform region. Empty pick or non-zero exit
+     * (Escape) aborts.
+     *
+     * Window snapping is not wired up on niri. The Hyprland build piped each
+     * client's rectangle into slurp so a click snapped to a whole window, and
+     * `hyprctl clients` gave absolute screen coordinates to do it with. niri
+     * reports a window's position relative to the *workspace view*, which is
+     * inset by struts and by layer-shell exclusive zones — this bar's included.
+     * The inset is not exposed over IPC, so reconstructing absolute coordinates
+     * means guessing our own reserved height, and being wrong by exactly that
+     * much is worse than not snapping: the rectangles would look plausible and
+     * land off by ~40px every time.
+     *
+     * Restoring it wants either an IPC addition upstream, or deriving the offset
+     * from the shell's own exclusive zone and every other layer surface's, which
+     * we cannot see.
      */
     Process {
         id: windowProc
-        command: ["sh", "-c", "hyprctl clients -j | jq -r '.[] | \"\\(.at[0]),\\(.at[1]) \\(.size[0])x\\(.size[1])\"' | slurp -f \"%wx%h+%x+%y\""]
+        command: ["sh", "-c", "slurp -f \"%wx%h+%x+%y\""]
         stdout: StdioCollector {
             onStreamFinished: {
                 var geom = this.text.trim();

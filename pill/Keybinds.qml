@@ -38,7 +38,7 @@ PillSurface {
 
     signal requestSurface(string name)
 
-    readonly property string bindsPath: Quickshell.env("HOME") + "/.config/hypr/modules/binds.lua"
+    readonly property string bindsPath: Paths.hyprlandConfig("modules/binds.lua")
 
     property var binds: []
     property int focusIndex: 0

@@ -42,9 +42,9 @@ SettingsSurface {
 
     property string note: ""
 
-    readonly property string inputPath: Quickshell.env("HOME") + "/.config/hypr/modules/input.lua"
-    readonly property string envPath: Quickshell.env("HOME") + "/.config/hypr/modules/env.lua"
-    readonly property string autostartPath: Quickshell.env("HOME") + "/.config/hypr/modules/autostart.lua"
+    readonly property string inputPath: Paths.hyprlandConfig("modules/input.lua")
+    readonly property string envPath: Paths.hyprlandConfig("modules/env.lua")
+    readonly property string autostartPath: Paths.hyprlandConfig("modules/autostart.lua")
 
     property real sensitivity: 0
     property string accelProfile: "flat"

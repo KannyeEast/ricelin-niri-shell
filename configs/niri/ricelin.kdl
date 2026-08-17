@@ -1,0 +1,5 @@
+spawn-at-startup "qs" "-c" "pill"
+spawn-at-startup "qs" "-c" "lock"
+spawn-at-startup "qs" "-c" "launcher"
+
+workspace "minimized"

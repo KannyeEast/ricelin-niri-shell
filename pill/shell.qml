@@ -4,7 +4,6 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
-import Quickshell.Hyprland
 import "Singletons"
 
 /**
@@ -31,10 +30,14 @@ ShellRoot {
     property string openSurface: ""
     property string peekMon: ""
 
+    /**
+     * Nothing to pull: niri's event stream pushes a complete snapshot as soon as
+     * it connects and only deltas after that, so there is no stale model to
+     * re-fetch. Kept as a call so the startup sequence still reads in order, and
+     * because [[Niri]] keeps the same no-op for ported call sites.
+     */
     function refresh() {
-        Hyprland.refreshMonitors();
-        Hyprland.refreshWorkspaces();
-        Hyprland.refreshToplevels();
+        Niri.refresh();
     }
 
     Component.onCompleted: {
@@ -99,40 +102,21 @@ ShellRoot {
     }
 
     /**
-     * Only these raw events can change what the pill renders (per-monitor
-     * active workspace, minimized toplevels, monitor hotplug). Everything
-     * else (window drags, resizes, title spam) must not trigger the triple
-     * model refresh, which costs three Hyprland IPC round-trips.
+     * The Hyprland build kept an allowlist of raw events here, because every
+     * interesting one had to be answered with a three-call model refresh and
+     * title spam would otherwise have driven it constantly. niri pushes deltas
+     * that [[Niri]] applies to its own properties, so the bindings that read
+     * those properties re-evaluate on their own and there is nothing to filter.
      */
-    readonly property var refreshEvents: ({
-        workspace: true, workspacev2: true,
-        createworkspace: true, createworkspacev2: true,
-        destroyworkspace: true, destroyworkspacev2: true,
-        moveworkspace: true, moveworkspacev2: true,
-        renameworkspace: true, activespecial: true,
-        focusedmon: true, focusedmonv2: true,
-        openwindow: true, closewindow: true,
-        movewindow: true, movewindowv2: true,
-        fullscreen: true,
-        monitoradded: true, monitoraddedv2: true, monitorremoved: true
-    })
-
-    Connections {
-        target: Hyprland
-        function onRawEvent(event) {
-            if (root.refreshEvents[event.name])
-                root.refresh();
-        }
-    }
 
     /**
-     * An empty monitor argument resolves to the focused monitor here, so the
-     * keybind scripts skip their hyprctl+jq round trip and a surface open costs
-     * one IPC call instead of three process spawns.
+     * An empty monitor argument resolves to the focused output here, so a
+     * keybind can call `qs ipc call pill mixer ""` without first asking the
+     * compositor which monitor it is on.
      */
     function toggleSurface(mon, surface) {
         if (!mon || mon.length === 0)
-            mon = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
+            mon = Niri.focusedOutput;
         if (root.openMon === mon && root.openSurface === surface) {
             root.close();
             return;
@@ -179,7 +163,10 @@ ShellRoot {
                 ScreenRec.quickChoosing = false;
                 ScreenRec.quickScreenChoosing = false;
             } else {
-                ScreenRec.quickMon = mon;
+                // Each pill shows the chooser only when quickMon names its own
+                // screen, so an empty one has to be resolved here or the
+                // chooser opens on nothing at all.
+                ScreenRec.quickMon = mon && mon.length > 0 ? mon : Niri.focusedOutput;
                 ScreenRec.quickScreenChoosing = false;
                 ScreenRec.quickChoosing = true;
             }
@@ -200,22 +187,50 @@ ShellRoot {
         function page(mon: string, name: string): void { root.toggleSurface(mon, name); }
 
         /**
-         * The two halves of the SUPER+M minimize toggle, driven by the
-         * minimize-toggle script which has already read the focused window. A
-         * desktop window drops into the minimized stash; a window already stashed
-         * comes back to the workspace it is handed, so the same key hides and
-         * restores. Both target the window by address so they act on the one the
-         * user pressed on, not whatever the compositor calls active afterwards.
+         * The two halves of the SUPER+M minimize toggle. A desktop window drops
+         * into the stash; a stashed window comes back to the workspace you are
+         * looking at, so the same key hides and restores.
+         *
+         * These took a window address on Hyprland because a helper script had
+         * already run `hyprctl activewindow` to find it. niri's event stream
+         * carries the focused window continuously, so the arguments and the
+         * script both go away and the keybind can call these bare:
+         *
+         *   Mod+M { spawn "qs" "ipc" "call" "pill" "minimizeToggle"; }
          */
-        function minimizeWindow(addr: string): void {
-            Hyprland.dispatch('hl.dsp.window.move({ workspace = "special:minimized", follow = false, window = "address:' + addr + '" })');
+        function minimizeWindow(): void {
+            Niri.minimize();
         }
-        function restoreWindow(arg: string): void {
-            var p = arg.split("|");
-            if (p.length < 2 || p[0].length === 0)
+
+        /** Newest first: the stash is a stack, so this undoes the last minimize. */
+        function restoreWindow(): void {
+            var stashed = Niri.minimizedWindows;
+            if (stashed.length > 0)
+                root.restoreTo(stashed[stashed.length - 1].id);
+        }
+
+        /**
+         * Stash the focused window, unless you are looking at the stash itself,
+         * in which case pull that window back out. One key does both halves, the
+         * way the visible special workspace signalled it on Hyprland.
+         */
+        function minimizeToggle(): void {
+            var stash = Niri.minimizedWorkspace;
+            var ws = Niri.focusedWorkspace;
+            if (stash && ws && ws.id === stash.id) {
+                if (Niri.focusedWindowId >= 0)
+                    root.restoreTo(Niri.focusedWindowId);
                 return;
-            Hyprland.dispatch('hl.dsp.window.move({ workspace = ' + p[1] + ', window = "address:' + p[0] + '" })');
+            }
+            Niri.minimize();
         }
+    }
+
+    /** Send a stashed window back to a real workspace on this output, and follow it. */
+    function restoreTo(windowId) {
+        var target = Niri.restoreTargetOn(Niri.focusedOutput);
+        if (target)
+            Niri.restore(windowId, target.output, target.idx);
     }
 
     Variants {
@@ -260,18 +275,28 @@ ShellRoot {
             readonly property bool modal: pill.authPending ? false : (surfaceOpen || pill.held || pill.quickChoosing)
 
             /**
-             * True while this monitor's active workspace reports a fullscreen
-             * client. The pill then retracts off the top edge and the whole
-             * layer becomes click-through so fullscreen content owns the screen.
+             * True while a fullscreen client is visible on this monitor. The
+             * pill then retracts off the top edge and the whole layer becomes
+             * click-through so fullscreen content owns the screen.
+             *
+             * Read off wlr-foreign-toplevel rather than the compositor's own
+             * IPC: niri's Window objects carry no fullscreen flag (there is a
+             * `fullscreen-window` action, but no state to read back), while the
+             * foreign-toplevel protocol reports both `fullscreen` and the
+             * screens a toplevel is on. That protocol is also compositor-neutral,
+             * so this stops being the one place that has to know which
+             * compositor is running.
              */
             readonly property bool monFullscreen: {
-                var mons = Hyprland.monitors.values;
-                for (var i = 0; i < mons.length; i++) {
-                    if (mons[i].name === modelData.name) {
-                        var ws = mons[i].activeWorkspace;
-                        var o = ws ? ws.lastIpcObject : null;
-                        return o ? !!o.hasfullscreen : false;
-                    }
+                var tls = ToplevelManager.toplevels.values;
+                for (var i = 0; i < tls.length; i++) {
+                    var t = tls[i];
+                    if (!t || !t.fullscreen)
+                        continue;
+                    var screens = t.screens;
+                    for (var j = 0; j < screens.length; j++)
+                        if (screens[j] === modelData)
+                            return true;
                 }
                 return false;
             }

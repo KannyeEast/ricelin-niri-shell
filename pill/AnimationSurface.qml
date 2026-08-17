@@ -42,7 +42,7 @@ SettingsSurface {
         return r;
     }
 
-    readonly property string animPath: Quickshell.env("HOME") + "/.config/hypr/modules/animations.lua"
+    readonly property string animPath: Paths.hyprlandConfig("modules/animations.lua")
     readonly property string mainCurve: "pillMorph"
 
     property bool animOn: true

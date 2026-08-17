@@ -30,7 +30,7 @@ PillSurface {
 
     signal requestSurface(string name)
 
-    readonly property string stashPath: Quickshell.env("HOME") + "/.config/hypr/modules/stash-apps.lua"
+    readonly property string stashPath: Paths.hyprlandConfig("modules/stash-apps.lua")
 
     property var entries: []
 

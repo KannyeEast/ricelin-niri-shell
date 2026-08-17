@@ -2,8 +2,8 @@ pragma Singleton
 
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import Quickshell.Services.Mpris
-import Quickshell.Hyprland
 
 /**
  * The one now-playing source the pill views read: the media surface, the source
@@ -346,22 +346,41 @@ Singleton {
         xhr.send();
     }
 
-    GlobalShortcut {
-        appid: "quickshell"
-        name: "mediaToggle"
-        description: "Play or pause the active media player"
-        onPressed: { var a = root.active; if (a && a.canTogglePlaying) a.togglePlaying(); }
-    }
-    GlobalShortcut {
-        appid: "quickshell"
-        name: "mediaNext"
-        description: "Skip to the next track"
-        onPressed: { var a = root.active; if (a && a.canGoNext) a.next(); }
-    }
-    GlobalShortcut {
-        appid: "quickshell"
-        name: "mediaPrev"
-        description: "Skip to the previous track"
-        onPressed: { var a = root.active; if (a && a.canGoPrevious) a.previous(); }
+    /**
+     * Media keys, as an IPC surface rather than compositor global shortcuts.
+     *
+     * The Hyprland build registered these through GlobalShortcut, which rides
+     * the hyprland-global-shortcuts protocol; niri does not implement it, so
+     * there is nothing for the compositor to route a `global` bind to. Binding
+     * the keys to `qs ipc call` instead costs one short-lived spawn per press
+     * and is compositor-agnostic.
+     *
+     * In niri's config:
+     *
+     *   XF86AudioPlay allow-when-locked=true { spawn "qs" "ipc" "call" "media" "toggle"; }
+     *   XF86AudioNext allow-when-locked=true { spawn "qs" "ipc" "call" "media" "next"; }
+     *   XF86AudioPrev allow-when-locked=true { spawn "qs" "ipc" "call" "media" "prev"; }
+     *
+     * Routing through `active` rather than the MPRIS default keeps the keys on
+     * whichever player the pill is showing, which is the point of the picker.
+     */
+    IpcHandler {
+        target: "media"
+
+        function toggle(): void {
+            var a = root.active;
+            if (a && a.canTogglePlaying)
+                a.togglePlaying();
+        }
+        function next(): void {
+            var a = root.active;
+            if (a && a.canGoNext)
+                a.next();
+        }
+        function prev(): void {
+            var a = root.active;
+            if (a && a.canGoPrevious)
+                a.previous();
+        }
     }
 }

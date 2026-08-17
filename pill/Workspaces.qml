@@ -2,21 +2,24 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
-import Quickshell.Hyprland
 import "Singletons"
 
 /**
  * Workspace dots for one monitor. No numbers, no icons. Active one is a larger
  * filled vermillion dot; the rest are small and dim, brightening on hover.
- * Clicking a dot focuses that workspace via the Hyprland-lua dispatcher. Active
- * marker tracks the monitor's live active workspace name from the Hyprland
- * model.
+ * Clicking a dot focuses that workspace. The active marker tracks the monitor's
+ * live active workspace from [[Niri]].
  *
- * The dot range unions this monitor's workspace rules ([[Workspacerules]]) with
- * the workspaces Hyprland currently has on it, so a rule-driven setup (e.g.
- * monitors.lua splitting 1-5 / 6-10 across two screens) always shows every
- * assigned dot while a workspace outside the rules (r+1 past the last ruled
- * one) still appears instead of vanishing from the strip.
+ * The strip is simply the workspaces niri has on this output, in its order.
+ * Hyprland needed workspace rules unioned in, because a ruled-but-unvisited
+ * workspace did not exist yet and would have been missing from the strip. niri
+ * has no such gap: workspaces are created and destroyed as you use them and the
+ * event stream always carries the full set, so the live list is already
+ * complete.
+ *
+ * niri keeps one empty workspace at the end of every output, so the strip
+ * carries a trailing dot with nothing on it. That is the compositor's own model
+ * showing through, the same as the overview shows it, not an off-by-one.
  */
 Item {
     id: workspaces
@@ -27,40 +30,30 @@ Item {
     property real dotW: 5 * s
     property real gap: 4 * s
 
+    /**
+     * Per-output workspace indices, ascending. These are niri's `idx`, which is
+     * a position rather than an identity: it shifts when workspaces are added,
+     * removed or re-ordered. That is fine for a strip that redraws from the
+     * event stream anyway, and it is what focus-workspace takes.
+     *
+     * Named workspaces are left out. They stand in for Hyprland's special
+     * workspaces here — the minimize stash, the private space — and those never
+     * had dots either; the pill announces them by swapping the clock for their
+     * name instead. See [[Pill]].specialView.
+     */
     readonly property var range: {
         var out = [];
-        var seen = ({});
-        var ruled = Workspacerules.byMonitor[screenName];
-        if (ruled && ruled.length) {
-            for (var r = 0; r < ruled.length; r++) {
-                if (!seen[ruled[r]]) {
-                    seen[ruled[r]] = true;
-                    out.push(ruled[r]);
-                }
-            }
-        }
-
-        var wss = Hyprland.workspaces.values;
-        for (var i = 0; i < wss.length; i++) {
-            var w = wss[i];
-            if (w.id >= 1 && w.monitor && w.monitor.name === screenName && !seen[w.id]) {
-                seen[w.id] = true;
-                out.push(w.id);
-            }
-        }
-        var a = parseInt(activeName);
-        if (a >= 1 && !seen[a])
-            out.push(a);
-        out.sort(function (x, y) { return x - y; });
+        var wss = Niri.workspacesOn(screenName);
+        for (var i = 0; i < wss.length; i++)
+            if (!wss[i].name)
+                out.push(wss[i].idx);
         return out;
     }
 
+    /** Empty while a named workspace is up, so no dot reads as active there. */
     readonly property string activeName: {
-        var mons = Hyprland.monitors.values;
-        for (var i = 0; i < mons.length; i++)
-            if (mons[i].name === screenName)
-                return mons[i].activeWorkspace ? mons[i].activeWorkspace.name : "";
-        return "";
+        var ws = Niri.activeWorkspaceOn(screenName);
+        return ws && !ws.name ? String(ws.idx) : "";
     }
 
     property int hoverIndex: -1
@@ -129,7 +122,7 @@ Item {
                     anchors.bottomMargin: -8 * workspaces.s
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: Hyprland.dispatch('hl.dsp.focus({workspace="' + slot.wsName + '"})')
+                    onClicked: Niri.focusWorkspace(workspaces.screenName, slot.wsName)
                     onContainsMouseChanged: {
                         if (containsMouse)
                             workspaces.hoverIndex = slot.index;

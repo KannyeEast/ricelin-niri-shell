@@ -16,7 +16,7 @@ import Quickshell.Io
 Singleton {
     id: root
 
-    readonly property string confPath: Quickshell.env("HOME") + "/.config/hypr/hyprsunset.conf"
+    readonly property string confPath: Paths.hyprlandConfig("hyprsunset.conf")
 
     function clampTemp(t) {
         return Math.max(2200, Math.min(6000, Math.round(t)));

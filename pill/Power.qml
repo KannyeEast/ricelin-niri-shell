@@ -2,7 +2,6 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Quickshell
-import Quickshell.Hyprland
 import Quickshell.Widgets
 import "Singletons"
 
@@ -47,19 +46,30 @@ PillSurface {
     ameForm: holdingIndex >= 0 ? "dock" : (soulKey.length ? "soul" : "off")
     amePoint: Qt.point(heatX, heatY)
 
+    /**
+     * `action` names a niri action to fire; anything with an empty one is a
+     * plain exec. Logout is the only entry that has to go through the
+     * compositor, since ending the session means telling niri to quit.
+     */
     readonly property var actions: [
-        { key: "lock",     glyph: "lock",     label: "Lock",     confirm: false, dispatch: "",             argv: [Quickshell.env("HOME") + "/.config/hypr/scripts/lock.sh"] },
-        { key: "logout",   glyph: "logout",   label: "Logout",   confirm: true,  dispatch: "hl.dsp.exit()", argv: [] },
-        { key: "suspend",  glyph: "suspend",  label: "Sleep",    confirm: false, dispatch: "",             argv: ["systemctl", "suspend"] },
-        { key: "reboot",   glyph: "reboot",   label: "Restart",  confirm: true,  dispatch: "",             argv: ["systemctl", "reboot"] },
-        { key: "shutdown", glyph: "shutdown", label: "Shutdown", confirm: true,  dispatch: "",             argv: ["systemctl", "poweroff"] }
+        { key: "lock",     glyph: "lock",     label: "Lock",     confirm: false, action: "",     argv: [Paths.script("lock.sh")] },
+        { key: "logout",   glyph: "logout",   label: "Logout",   confirm: true,  action: "quit", argv: [] },
+        { key: "suspend",  glyph: "suspend",  label: "Sleep",    confirm: false, action: "",     argv: ["systemctl", "suspend"] },
+        { key: "reboot",   glyph: "reboot",   label: "Restart",  confirm: true,  action: "",     argv: ["systemctl", "reboot"] },
+        { key: "shutdown", glyph: "shutdown", label: "Shutdown", confirm: true,  action: "",     argv: ["systemctl", "poweroff"] }
     ]
 
     readonly property int splitAfter: 2
 
+    /**
+     * `quit` prompts for an Enter on the tty it was run from unless told not to,
+     * which from a GUI button means it would look like nothing happened.
+     */
     function run(a) {
-        if (a.dispatch && a.dispatch.length)
-            Hyprland.dispatch(a.dispatch);
+        if (a.action === "quit")
+            Niri.action("quit", ["--skip-confirmation"]);
+        else if (a.action && a.action.length)
+            Niri.action(a.action);
         else
             Quickshell.execDetached(a.argv);
         root.requestClose();

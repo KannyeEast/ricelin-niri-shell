@@ -7,7 +7,6 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Networking
 import Quickshell.Bluetooth
-import Quickshell.Hyprland
 import "Singletons"
 
 /**
@@ -100,31 +99,29 @@ Item {
     readonly property bool authPending: updatesOpen && ldUpdates.item !== null && ldUpdates.item.applying
 
     /**
-     * The special workspace shown on this pill's monitor, surfaced as a plain word
+     * The named workspace shown on this pill's monitor, surfaced as a plain word
      * in place of the clock so it is obvious you are looking at the minimized stash
      * or the private space rather than your real desktop. Empty in the normal case.
+     *
+     * niri has no special workspaces; named workspaces take their place. That
+     * maps cleanly, because the only workspaces carrying a name are the ones
+     * declared in config.kdl for exactly this kind of purpose — everyday
+     * workspaces are created on demand and stay anonymous.
      */
     readonly property string specialView: {
-        var ms = Hyprland.monitors.values;
-        for (var i = 0; i < ms.length; i++) {
-            if (ms[i] && ms[i].name === pill.screenName) {
-                var o = ms[i].lastIpcObject;
-                var sw = (o && o.specialWorkspace) ? o.specialWorkspace.name : "";
-                if (sw && sw.indexOf("special:") === 0) {
-                    var id = sw.slice("special:".length);
-                    var sl = Spaces.list;
-                    for (var j = 0; j < sl.length; j++)
-                        if (sl[j] && sl[j].id === id)
-                            return sl[j].name;
-                    if (id === "minimized") return "Minimized";
-                    if (id === "private") return "Private";
-                    if (id === "stash") return "Stash";
-                    return id.charAt(0).toUpperCase() + id.slice(1);
-                }
-                return "";
-            }
-        }
-        return "";
+        var ws = Niri.activeWorkspaceOn(pill.screenName);
+        var id = ws ? ws.name : "";
+        if (!id)
+            return "";
+
+        var sl = Spaces.list;
+        for (var j = 0; j < sl.length; j++)
+            if (sl[j] && sl[j].id === id)
+                return sl[j].name;
+        if (id === "minimized") return "Minimized";
+        if (id === "private") return "Private";
+        if (id === "stash") return "Stash";
+        return id.charAt(0).toUpperCase() + id.slice(1);
     }
     readonly property bool toastActive: Notifs.popups.length > 0
     readonly property bool osdActive: osd.flashing
@@ -878,7 +875,7 @@ Item {
         pill.installLine = "";
         pill.installProto = "";
         pill.installPct = "";
-        installProc.command = ["bash", Quickshell.env("HOME") + "/.config/hypr/scripts/app-install.sh", "install", next];
+        installProc.command = ["bash", Paths.script("app-install.sh"), "install", next];
         installProc.running = true;
     }
 
